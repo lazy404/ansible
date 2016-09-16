@@ -272,7 +272,7 @@ class TestStrategyBase(unittest.TestCase):
         strategy_base._blocked_hosts['test01'] = True
         strategy_base._pending_results = 1
         mock_iterator.is_failed.return_value = True
-        results = strategy_base._process_pending_results(iterator=mock_iterator)
+        results = strategy_base._wait_on_pending_results(iterator=mock_iterator)
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0], task_result)
         self.assertEqual(strategy_base._pending_results, 0)
@@ -306,7 +306,7 @@ class TestStrategyBase(unittest.TestCase):
         queue_items.append(TaskResult(host=mock_host.name, task=mock_task._uuid, return_data=dict(add_host=dict(host_name='newhost01', new_groups=['foo']))))
         strategy_base._blocked_hosts['test01'] = True
         strategy_base._pending_results = 1
-        results = strategy_base._process_pending_results(iterator=mock_iterator)
+        results = strategy_base._wait_on_pending_results(iterator=mock_iterator)
         self.assertEqual(len(results), 1)
         self.assertEqual(strategy_base._pending_results, 0)
         self.assertNotIn('test01', strategy_base._blocked_hosts)
@@ -314,7 +314,7 @@ class TestStrategyBase(unittest.TestCase):
         queue_items.append(TaskResult(host=mock_host.name, task=mock_task._uuid, return_data=dict(add_group=dict(group_name='foo'))))
         strategy_base._blocked_hosts['test01'] = True
         strategy_base._pending_results = 1
-        results = strategy_base._process_pending_results(iterator=mock_iterator)
+        results = strategy_base._wait_on_pending_results(iterator=mock_iterator)
         self.assertEqual(len(results), 1)
         self.assertEqual(strategy_base._pending_results, 0)
         self.assertNotIn('test01', strategy_base._blocked_hosts)
@@ -322,7 +322,7 @@ class TestStrategyBase(unittest.TestCase):
         queue_items.append(TaskResult(host=mock_host.name, task=mock_task._uuid, return_data=dict(changed=True, _ansible_notify=['test handler'])))
         strategy_base._blocked_hosts['test01'] = True
         strategy_base._pending_results = 1
-        results = strategy_base._process_pending_results(iterator=mock_iterator)
+        results = strategy_base._wait_on_pending_results(iterator=mock_iterator)
         self.assertEqual(len(results), 1)
         self.assertEqual(strategy_base._pending_results, 0)
         self.assertNotIn('test01', strategy_base._blocked_hosts)
