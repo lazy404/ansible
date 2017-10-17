@@ -24,15 +24,15 @@
 # INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
 # LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 # USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
 
 import re
-import time
 import shlex
+import time
 
-from ansible.module_utils.basic import BOOLEANS_TRUE, BOOLEANS_FALSE
+from ansible.module_utils.parsing.convert_bool import BOOLEANS_TRUE, BOOLEANS_FALSE
 from ansible.module_utils.six import string_types, text_type
 from ansible.module_utils.six.moves import zip
+
 
 def to_list(val):
     if isinstance(val, (list, tuple)):
@@ -42,15 +42,30 @@ def to_list(val):
     else:
         return list()
 
+
 class FailedConditionsError(Exception):
     def __init__(self, msg, failed_conditions):
         super(FailedConditionsError, self).__init__(msg)
         self.failed_conditions = failed_conditions
 
+
+class FailedConditionalError(Exception):
+    def __init__(self, msg, failed_conditional):
+        super(FailedConditionalError, self).__init__(msg)
+        self.failed_conditional = failed_conditional
+
+
 class AddCommandError(Exception):
     def __init__(self, msg, command):
         super(AddCommandError, self).__init__(msg)
         self.command = command
+
+
+class AddConditionError(Exception):
+    def __init__(self, msg, condition):
+        super(AddConditionError, self).__init__(msg)
+        self.condition = condition
+
 
 class Cli(object):
 
@@ -92,6 +107,7 @@ class Cli(object):
 
         return responses
 
+
 class Command(object):
 
     def __init__(self, command, output=None, prompt=None, response=None,
@@ -109,6 +125,7 @@ class Command(object):
     def __str__(self):
         return self.command_string
 
+
 class CommandRunner(object):
 
     def __init__(self, module):
@@ -125,7 +142,6 @@ class CommandRunner(object):
         self.match = 'all'
 
         self._default_output = module.connection.default_output
-
 
     def add_command(self, command, output=None, prompt=None, response=None,
                     **kwargs):
@@ -145,7 +161,10 @@ class CommandRunner(object):
         return [cmd.response for cmd in self.commands]
 
     def add_conditional(self, condition):
-        self.conditionals.add(Conditional(condition))
+        try:
+            self.conditionals.add(Conditional(condition))
+        except AttributeError as exc:
+            raise AddConditionError(msg=str(exc), condition=condition)
 
     def run(self):
         while self.retries > 0:
@@ -165,8 +184,9 @@ class CommandRunner(object):
             self.retries -= 1
         else:
             failed_conditions = [item.raw for item in self.conditionals]
-            errmsg = 'One or more conditional statements have not be satisfied'
+            errmsg = 'One or more conditional statements have not been satisfied'
             raise FailedConditionsError(errmsg, failed_conditions)
+
 
 class Conditional(object):
     """Used in command modules to evaluate waitfor conditions
@@ -183,11 +203,14 @@ class Conditional(object):
         'matches': ['matches']
     }
 
-    def __init__(self, conditional, encoding='json'):
+    def __init__(self, conditional, encoding=None):
         self.raw = conditional
-        self.encoding = encoding
 
-        key, op, val = shlex.split(conditional)
+        try:
+            key, op, val = shlex.split(conditional)
+        except ValueError:
+            raise ValueError('failed to parse conditional')
+
         self.key = key
         self.func = self._func(op)
         self.value = self._cast_value(val)
@@ -215,34 +238,16 @@ class Conditional(object):
         raise AttributeError('unknown operator: %s' % oper)
 
     def get_value(self, result):
-        if self.encoding in ['json', 'text']:
+        try:
             return self.get_json(result)
-        elif self.encoding == 'xml':
-            return self.get_xml(result.get('result'))
-
-    def get_xml(self, result):
-        parts = self.key.split('.')
-
-        value_index = None
-        match = re.match(r'^\S+(\[)(\d+)\]', parts[-1])
-        if match:
-            start, end = match.regs[1]
-            parts[-1] = parts[-1][0:start]
-            value_index = int(match.group(2))
-
-        path = '/'.join(parts[1:])
-        path = '/%s' % path
-        path += '/text()'
-
-        index = int(re.match(r'result\[(\d+)\]', parts[0]).group(1))
-        values = result[index].xpath(path)
-
-        if value_index is not None:
-            return values[value_index].strip()
-        return [v.strip() for v in values]
+        except (IndexError, TypeError, AttributeError):
+            msg = 'unable to apply conditional to result'
+            raise FailedConditionalError(msg, self.raw)
 
     def get_json(self, result):
-        parts = re.split(r'\.(?=[^\]]*(?:\[|$))', self.key)
+        string = re.sub(r"\[[\'|\"]", ".", self.key)
+        string = re.sub(r"[\'|\"]\]", ".", string)
+        parts = re.split(r'\.(?=[^\]]*(?:\[|$))', string)
         for part in parts:
             match = re.findall(r'\[(\S+?)\]', part)
             if match:
@@ -286,5 +291,5 @@ class Conditional(object):
         return str(self.value) in value
 
     def matches(self, value):
-        match = re.search(value, self.value, re.M)
+        match = re.search(self.value, value, re.M)
         return match is not None

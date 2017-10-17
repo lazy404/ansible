@@ -1,33 +1,58 @@
 # (c) 2012, Michael DeHaan <michael.dehaan@gmail.com>
-#
-# This file is part of Ansible
-#
-# Ansible is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# Ansible is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
+# (c) 2017 Ansible Project
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
-# ---
-# The paramiko transport is provided because many distributions, in particular EL6 and before
-# do not support ControlPersist in their SSH implementations.  This is needed on the Ansible
-# control machine to be reasonably efficient with connections.  Thus paramiko is faster
-# for most users on these platforms.  Users with ControlPersist capability can consider
-# using -c ssh or configuring the transport in ansible.cfg.
+DOCUMENTATION = """
+    author: Ansible Core Team
+    connection: paramiko
+    short_description: Run tasks via python ssh (paramiko)
+    description:
+        - Use the python ssh implementation (Paramiko) to connect to targets
+        - The paramiko transport is provided because many distributions, in particular EL6 and before do not support ControlPersist
+          in their SSH implementations.
+        - This is needed on the Ansible control machine to be reasonably efficient with connections.
+          Thus paramiko is faster for most users on these platforms.
+          Users with ControlPersist capability can consider using -c ssh or configuring the transport in the configuration file.
+    version_added: "0.1"
+    options:
+      remote_addr:
+        description:
+            - Address of the remote target
+        default: inventory_hostname
+        vars:
+            - name: ansible_host
+            - name: ansible_ssh_host
+            - name: ansible_paramiko_host
+      remote_user:
+        description:
+            - User to login/authenticate as
+        vars:
+            - name: ansible_user
+            - name: ansible_ssh_user
+            - name: ansible_paramiko_user
+# TODO:
+#getattr(self._play_context, 'ssh_extra_args', '') or '',
+#getattr(self._play_context, 'ssh_common_args', '') or '',
+#getattr(self._play_context, 'ssh_args', '') or '',
+#C.HOST_KEY_CHECKING
+#C.PARAMIKO_HOST_KEY_AUTO_ADD
+#C.USE_PERSISTENT_CONNECTIONS:
+#            ssh.connect(
+#                look_for_keys=C.PARAMIKO_LOOK_FOR_KEYS,
+#                key_filename,
+#                password=self._play_context.password,
+#                timeout=self._play_context.timeout,
+#                port=port,
+#proxy_command = proxy_command or C.PARAMIKO_PROXY_COMMAND
+#C.PARAMIKO_PTY
+#C.PARAMIKO_RECORD_HOST_KEYS
+"""
 
 import warnings
 import os
 import socket
-import logging
 import tempfile
 import traceback
 import fcntl
@@ -37,14 +62,13 @@ import re
 from termios import tcflush, TCIFLUSH
 from binascii import hexlify
 
-from ansible.compat.six import iteritems
-
 from ansible import constants as C
-from ansible.compat.six.moves import input
 from ansible.errors import AnsibleError, AnsibleConnectionFailure, AnsibleFileNotFound
+from ansible.module_utils.six import iteritems
+from ansible.module_utils.six.moves import input
 from ansible.plugins.connection import ConnectionBase
 from ansible.utils.path import makedirs_safe
-from ansible.module_utils._text import to_bytes
+from ansible.module_utils._text import to_bytes, to_native
 
 try:
     from __main__ import display
@@ -53,7 +77,7 @@ except ImportError:
     display = Display()
 
 
-AUTHENTICITY_MSG="""
+AUTHENTICITY_MSG = """
 paramiko: The authenticity of host '%s' can't be established.
 The %s key fingerprint is %s.
 Are you sure you want to continue connecting (yes/no)?
@@ -63,13 +87,12 @@ Are you sure you want to continue connecting (yes/no)?
 SETTINGS_REGEX = re.compile(r'(\w+)(?:\s*=\s*|\s+)(.+)')
 
 # prevent paramiko warning noise -- see http://stackoverflow.com/questions/3920502/
-HAVE_PARAMIKO=False
+HAVE_PARAMIKO = False
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     try:
         import paramiko
-        HAVE_PARAMIKO=True
-        logging.getLogger("paramiko").setLevel(logging.WARNING)
+        HAVE_PARAMIKO = True
     except ImportError:
         pass
 
@@ -89,7 +112,10 @@ class MyAddPolicy(object):
 
     def missing_host_key(self, client, hostname, key):
 
-        if C.HOST_KEY_CHECKING:
+        if all((C.HOST_KEY_CHECKING, not C.PARAMIKO_HOST_KEY_AUTO_ADD)):
+
+            if C.USE_PERSISTENT_CONNECTIONS:
+                raise AnsibleConnectionFailure('rejected %s host key for host %s: %s' % (key.get_name(), hostname, hexlify(key.get_fingerprint())))
 
             self.connection.connection_lock()
 
@@ -107,7 +133,7 @@ class MyAddPolicy(object):
 
             self.connection.connection_unlock()
 
-            if inp not in ['yes','y','']:
+            if inp not in ['yes', 'y', '']:
                 raise AnsibleError("host connection rejected by user")
 
         key._added_by_ansible_this_time = True
@@ -145,9 +171,9 @@ class Connection(ConnectionBase):
         proxy_command = None
         # Parse ansible_ssh_common_args, specifically looking for ProxyCommand
         ssh_args = [
-            getattr(self._play_context, 'ssh_extra_args', ''),
-            getattr(self._play_context, 'ssh_common_args', ''),
-            getattr(self._play_context, 'ssh_args', ''),
+            getattr(self._play_context, 'ssh_extra_args', '') or '',
+            getattr(self._play_context, 'ssh_common_args', '') or '',
+            getattr(self._play_context, 'ssh_args', '') or '',
         ]
         if ssh_args is not None:
             args = self._split_ssh_args(' '.join(ssh_args))
@@ -193,7 +219,8 @@ class Connection(ConnectionBase):
             raise AnsibleError("paramiko is not installed")
 
         port = self._play_context.port or 22
-        display.vvv("ESTABLISH CONNECTION FOR USER: %s on PORT %s TO %s" % (self._play_context.remote_user, port, self._play_context.remote_addr), host=self._play_context.remote_addr)
+        display.vvv("ESTABLISH CONNECTION FOR USER: %s on PORT %s TO %s" % (self._play_context.remote_user, port, self._play_context.remote_addr),
+                    host=self._play_context.remote_addr)
 
         ssh = paramiko.SSHClient()
 
@@ -202,11 +229,11 @@ class Connection(ConnectionBase):
         if C.HOST_KEY_CHECKING:
             for ssh_known_hosts in ("/etc/ssh/ssh_known_hosts", "/etc/openssh/ssh_known_hosts"):
                 try:
-                    #TODO: check if we need to look at several possible locations, possible for loop
+                    # TODO: check if we need to look at several possible locations, possible for loop
                     ssh.load_system_host_keys(ssh_known_hosts)
                     break
                 except IOError:
-                    pass # file was not found, but not required to function
+                    pass  # file was not found, but not required to function
             ssh.load_system_host_keys()
 
         sock_kwarg = self._parse_proxy_command(port)
@@ -227,13 +254,15 @@ class Connection(ConnectionBase):
                 self._play_context.remote_addr,
                 username=self._play_context.remote_user,
                 allow_agent=allow_agent,
-                look_for_keys=True,
+                look_for_keys=C.PARAMIKO_LOOK_FOR_KEYS,
                 key_filename=key_filename,
                 password=self._play_context.password,
                 timeout=self._play_context.timeout,
                 port=port,
                 **sock_kwarg
             )
+        except paramiko.ssh_exception.BadHostKeyException as e:
+            raise AnsibleConnectionFailure('host key mismatch for %s' % e.hostname)
         except Exception as e:
             msg = str(e)
             if "PID check failed" in msg:
@@ -291,11 +320,11 @@ class Connection(ConnectionBase):
                     chunk = chan.recv(bufsize)
                     display.debug("chunk is: %s" % chunk)
                     if not chunk:
-                        if 'unknown user' in become_output:
-                            raise AnsibleError( 'user %s does not exist' % self._play_context.become_user)
+                        if b'unknown user' in become_output:
+                            raise AnsibleError('user %s does not exist' % self._play_context.become_user)
                         else:
                             break
-                            #raise AnsibleError('ssh connection closed waiting for password prompt')
+                            # raise AnsibleError('ssh connection closed waiting for password prompt')
                     become_output += chunk
 
                     # need to check every line because we might get lectured
@@ -310,7 +339,7 @@ class Connection(ConnectionBase):
 
                 if passprompt:
                     if self._play_context.become and self._play_context.become_pass:
-                        chan.sendall(self._play_context.become_pass + '\n')
+                        chan.sendall(to_bytes(self._play_context.become_pass) + b'\n')
                     else:
                         raise AnsibleError("A password is reqired but none was supplied")
                 else:
@@ -363,7 +392,7 @@ class Connection(ConnectionBase):
         try:
             self.sftp = self._connect_sftp()
         except Exception as e:
-            raise AnsibleError("failed to open a SFTP connection (%s)", e)
+            raise AnsibleError("failed to open a SFTP connection (%s)" % to_native(e))
 
         try:
             self.sftp.get(to_bytes(in_path, errors='surrogate_or_strict'), to_bytes(out_path, errors='surrogate_or_strict'))
@@ -418,8 +447,9 @@ class Connection(ConnectionBase):
         SSH_CONNECTION_CACHE.pop(cache_key, None)
         SFTP_CONNECTION_CACHE.pop(cache_key, None)
 
-        if self.sftp is not None:
-            self.sftp.close()
+        if hasattr(self, 'sftp'):
+            if self.sftp is not None:
+                self.sftp.close()
 
         if C.HOST_KEY_CHECKING and C.PARAMIKO_RECORD_HOST_KEYS and self._any_keys_added():
 
@@ -427,7 +457,7 @@ class Connection(ConnectionBase):
             # (This doesn't acquire the connection lock because it needs
             # to exclude only other known_hosts writers, not connections
             # that are starting up.)
-            lockfile = self.keyfile.replace("known_hosts",".known_hosts.lock")
+            lockfile = self.keyfile.replace("known_hosts", ".known_hosts.lock")
             dirname = os.path.dirname(self.keyfile)
             makedirs_safe(dirname)
 
@@ -443,7 +473,7 @@ class Connection(ConnectionBase):
                 # gather information about the current key file, so
                 # we can ensure the new file has the correct mode/owner
 
-                key_dir  = os.path.dirname(self.keyfile)
+                key_dir = os.path.dirname(self.keyfile)
                 if os.path.exists(self.keyfile):
                     key_stat = os.stat(self.keyfile)
                     mode = key_stat.st_mode
@@ -472,7 +502,6 @@ class Connection(ConnectionBase):
                 # unable to save keys, including scenario when key was invalid
                 # and caught earlier
                 traceback.print_exc()
-                pass
             fcntl.lockf(KEY_LOCK, fcntl.LOCK_UN)
 
         self.ssh.close()
