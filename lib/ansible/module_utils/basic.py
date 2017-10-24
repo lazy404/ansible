@@ -488,6 +488,8 @@ def _remove_values_conditions(value, no_log_strings, deferred_removals):
 
     elif isinstance(value, datetime.datetime):
         value = value.isoformat()
+    elif type(value).__name__ == 'ContainerServiceServicePrincipalProfile':
+        return 'MASKED_SERVICE_PRINCIPAL'
     else:
         raise TypeError('Value of unknown type: %s, %s' % (type(value), value))
 
