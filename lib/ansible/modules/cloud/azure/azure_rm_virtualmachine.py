@@ -34,6 +34,9 @@ options:
         description:
             - Name of the resource group containing the virtual machine.
         required: true
+    availability_set:
+        description:
+            - Name of the availability set
     name:
         description:
             - Name of the virtual machine.
@@ -544,7 +547,7 @@ try:
                                           VirtualHardDisk, ManagedDiskParameters, \
                                           ImageReference, NetworkProfile, LinuxConfiguration, \
                                           SshConfiguration, SshPublicKey, VirtualMachineSizeTypes, \
-                                          DiskCreateOptionTypes
+                                          DiskCreateOptionTypes, AvailabilitySet
     from azure.mgmt.network.models import PublicIPAddress, NetworkSecurityGroup, NetworkInterface, \
                                           NetworkInterfaceIPConfiguration, Subnet
     from azure.mgmt.storage.models import StorageAccountCreateParameters, Sku
@@ -577,6 +580,7 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
 
         self.module_arg_spec = dict(
             resource_group=dict(type='str', required=True),
+            availability_set=dict(type='str'),
             name=dict(type='str', required=True),
             state=dict(choices=['present', 'absent'], default='present', type='str'),
             location=dict(type='str'),
@@ -609,6 +613,7 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
         )
 
         self.resource_group = None
+        self.availability_set = None
         self.name = None
         self.state = None
         self.location = None
@@ -675,6 +680,11 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
 
         if self.state == 'present':
             # Verify parameters and resolve any defaults
+
+            if self.availability_set:
+                availability_set = self.compute_client.availability_sets.get(resource_group, self.availability_set)
+            else:
+                availability_set = None
 
             if self.vm_size and not self.vm_size_is_valid():
                 self.fail("Parameter error: vm_size {0} is not valid for your subscription and location.".format(
@@ -853,6 +863,7 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
                     vm_resource = VirtualMachine(
                         self.location,
                         tags=self.tags,
+                        availability_set=availability_set,
                         os_profile=OSProfile(
                             admin_username=self.admin_username,
                             computer_name=self.short_hostname,
