@@ -863,7 +863,7 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
                     vm_resource = VirtualMachine(
                         self.location,
                         tags=self.tags,
-                        availability_set=availability_set,
+                        # availability_set=self.availability_set,
                         os_profile=OSProfile(
                             admin_username=self.admin_username,
                             computer_name=self.short_hostname,
