@@ -869,7 +869,7 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
                         vhd = None
                         managed_disk = ManagedDiskParameters(storage_account_type=self.managed_disk_type)
                     if self.availability_set:
-                        availability_sets = self.compute_client_new.availability_sets.list(self.resource_group)
+                        availability_sets = self.compute_client.availability_sets.list(self.resource_group)
                         availability_set=filter(lambda x: x.name == self.availability_set, availability_sets)[0]
 
                         vm_resource = VirtualMachine(
