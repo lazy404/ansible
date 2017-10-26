@@ -205,6 +205,7 @@ class AzureRMModuleBase(object):
         self._storage_client = None
         self._resource_client = None
         self._compute_client = None
+        self._compute_client_new = None
         self._dns_client = None
         self._web_client = None
         self._containerservice_client = None
@@ -725,22 +726,22 @@ class AzureRMModuleBase(object):
                 self.azure_credentials,
                 self.subscription_id,
                 base_url=self._cloud_environment.endpoints.resource_manager,
-                api_version='2016-07-01'
+                api_version='2017-03-30'
             )
         return self._compute_client
 
     @property
     def compute_client_new(self):
         self.log('Getting compute client')
-        if not self._compute_client:
+        if not self._compute_client_new:
             self.check_client_version('compute', compute_client_version, AZURE_EXPECTED_VERSIONS['compute_client_version'])
-            self._compute_client = ComputeManagementClient(
+            self._compute_client_new = ComputeManagementClient(
                 self.azure_credentials,
                 self.subscription_id,
                 base_url=self._cloud_environment.endpoints.resource_manager,
                 api_version='2017-05-10'
             )
-        return self._compute_client
+        return self._compute_client_new
 
 
     @property
