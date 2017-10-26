@@ -533,13 +533,13 @@ class AzureRMContainerService(AzureRMModuleBase):
         # Check if the ACS instance already present in the RG
         if self.state == 'present':
 
-            # if self.orchestration_platform == 'Kubernetes':
-            #     if not self.service_principal:
-            #         self.fail('service_principal should be specified when using Kubernetes')
-            #     if not self.service_principal[0].get('client_id'):
-            #         self.fail('service_principal.client_id should be specified when using Kubernetes')
-            #     if not self.service_principal[0].get('client_secret'):
-            #         self.fail('service_principal.client_secret should be specified when using Kubernetes')
+            if self.orchestration_platform == 'Kubernetes':
+                if not self.service_principal:
+                    self.fail('service_principal should be specified when using Kubernetes')
+                if not self.service_principal[0].get('client_id'):
+                    self.fail('service_principal.client_id should be specified when using Kubernetes')
+                if not self.service_principal[0].get('client_secret'):
+                    self.fail('service_principal.client_secret should be specified when using Kubernetes')
 
             mastercount = self.master_profile[0].get('count')
             if mastercount != 1 and mastercount != 3 and mastercount != 5:
