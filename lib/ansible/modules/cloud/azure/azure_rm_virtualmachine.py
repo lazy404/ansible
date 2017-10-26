@@ -563,6 +563,20 @@ AZURE_OBJECT_CLASS = 'VirtualMachine'
 
 AZURE_ENUM_MODULES = ['azure.mgmt.compute.models']
 
+def availability_set_to_dict(avaset):
+    '''
+    Serialazing the availability set from the API to Dict
+    :return: dict
+    '''
+    return dict(
+        id=avaset.id,
+        name=avaset.name,
+        location=avaset.location,
+        platform_update_domain_count=avaset.platform_update_domain_count,
+        platform_fault_domain_count=avaset.platform_fault_domain_count,
+        tags=avaset.tags,
+        sku=avaset.sku.name
+    )
 
 def extract_names_from_blob_uri(blob_uri, storage_suffix):
     # HACK: ditch this once python SDK supports get by URI
@@ -855,12 +869,13 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
                         vhd = None
                         managed_disk = ManagedDiskParameters(storage_account_type=self.managed_disk_type)
                     if self.availability_set:
-                        availability_set = self.compute_client_new.availability_sets.get(resource_group, self.availability_set)
+                        availability_sets = self.compute_client_new.availability_sets.list(self.resource_group)
+                        availability_set=filter(lambda x: x.name == self.availability_set, availability_sets)[0]
 
                         vm_resource = VirtualMachine(
                             self.location,
                             tags=self.tags,
-                            availability_set=availability_set,
+                            availability_set=availability_set_to_dict(availability_set),
                             os_profile=OSProfile(
                                 admin_username=self.admin_username,
                                 computer_name=self.short_hostname,
