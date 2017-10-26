@@ -725,7 +725,7 @@ class AzureRMModuleBase(object):
                 self.azure_credentials,
                 self.subscription_id,
                 base_url=self._cloud_environment.endpoints.resource_manager,
-                api_version='2017-03-30'
+                api_version='2016-07-01'
             )
         return self._compute_client
 
@@ -738,7 +738,7 @@ class AzureRMModuleBase(object):
                 self.azure_credentials,
                 self.subscription_id,
                 base_url=self._cloud_environment.endpoints.resource_manager,
-                api_version='2017-03-30'
+                api_version='2017-05-10'
             )
         return self._compute_client
 
