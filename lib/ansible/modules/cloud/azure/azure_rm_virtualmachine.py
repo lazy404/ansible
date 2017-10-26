@@ -681,11 +681,6 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
         if self.state == 'present':
             # Verify parameters and resolve any defaults
 
-            if self.availability_set:
-                availability_set = self.compute_client.availability_sets.get(resource_group, self.availability_set)
-            else:
-                availability_set = None
-
             if self.vm_size and not self.vm_size_is_valid():
                 self.fail("Parameter error: vm_size {0} is not valid for your subscription and location.".format(
                     self.vm_size
@@ -859,37 +854,69 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
                     else:
                         vhd = None
                         managed_disk = ManagedDiskParameters(storage_account_type=self.managed_disk_type)
+                    if self.availability_set:
+                        availability_set = self.compute_client.availability_sets.get(resource_group, self.availability_set)
 
-                    vm_resource = VirtualMachine(
-                        self.location,
-                        tags=self.tags,
-                        # availability_set=self.availability_set,
-                        os_profile=OSProfile(
-                            admin_username=self.admin_username,
-                            computer_name=self.short_hostname,
-                        ),
-                        hardware_profile=HardwareProfile(
-                            vm_size=self.vm_size
-                        ),
-                        storage_profile=StorageProfile(
-                            os_disk=OSDisk(
-                                name=self.storage_blob_name,
-                                vhd=vhd,
-                                managed_disk=managed_disk,
-                                create_option=DiskCreateOptionTypes.from_image,
-                                caching=self.os_disk_caching,
+                        vm_resource = VirtualMachine(
+                            self.location,
+                            tags=self.tags,
+                            availability_set=availability_set,
+                            os_profile=OSProfile(
+                                admin_username=self.admin_username,
+                                computer_name=self.short_hostname,
                             ),
-                            image_reference=ImageReference(
-                                publisher=self.image['publisher'],
-                                offer=self.image['offer'],
-                                sku=self.image['sku'],
-                                version=self.image['version'],
+                            hardware_profile=HardwareProfile(
+                                vm_size=self.vm_size
                             ),
-                        ),
-                        network_profile=NetworkProfile(
-                            network_interfaces=nics
-                        ),
-                    )
+                            storage_profile=StorageProfile(
+                                os_disk=OSDisk(
+                                    name=self.storage_blob_name,
+                                    vhd=vhd,
+                                    managed_disk=managed_disk,
+                                    create_option=DiskCreateOptionTypes.from_image,
+                                    caching=self.os_disk_caching,
+                                ),
+                                image_reference=ImageReference(
+                                    publisher=self.image['publisher'],
+                                    offer=self.image['offer'],
+                                    sku=self.image['sku'],
+                                    version=self.image['version'],
+                                ),
+                            ),
+                            network_profile=NetworkProfile(
+                                network_interfaces=nics
+                            ),
+                        )
+                    else:
+                        vm_resource = VirtualMachine(
+                            self.location,
+                            tags=self.tags,
+                            os_profile=OSProfile(
+                                admin_username=self.admin_username,
+                                computer_name=self.short_hostname,
+                            ),
+                            hardware_profile=HardwareProfile(
+                                vm_size=self.vm_size
+                            ),
+                            storage_profile=StorageProfile(
+                                os_disk=OSDisk(
+                                    name=self.storage_blob_name,
+                                    vhd=vhd,
+                                    managed_disk=managed_disk,
+                                    create_option=DiskCreateOptionTypes.from_image,
+                                    caching=self.os_disk_caching,
+                                ),
+                                image_reference=ImageReference(
+                                    publisher=self.image['publisher'],
+                                    offer=self.image['offer'],
+                                    sku=self.image['sku'],
+                                    version=self.image['version'],
+                                ),
+                            ),
+                            network_profile=NetworkProfile(
+                                network_interfaces=nics
+                            ),
+                        )
 
                     if self.admin_password:
                         vm_resource.os_profile.admin_password = self.admin_password
